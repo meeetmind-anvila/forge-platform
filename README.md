@@ -2,7 +2,7 @@
 
 Forge is a small CI/CD platform with an integrated artifact registry. It exposes one HTTP API through nginx, with an engine service for pipeline runs and a registry service for immutable artifacts and dependency resolution.
 
-Public URL: TODO before submission
+Public URL: http://136.118.0.162
 
 ## Pipeline YAML Schema
 
