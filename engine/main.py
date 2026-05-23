@@ -30,9 +30,9 @@ from logs import LogStreamer
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("engine")
 
-# Make registry modules importable
+# Make registry modules importable inside the engine container.
 import sys as _sys
-_sys.path.insert(0, "/registry")
+_sys.path.insert(0, "/app/registry")
 
 # ---------------------------------------------------------------------------
 # Config

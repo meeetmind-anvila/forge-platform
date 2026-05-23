@@ -1,0 +1,8 @@
+name: large-log
+version: 0.1.0
+jobs:
+  log:
+    runtime: alpine:3.18
+    resources: { cpu: 1.0, memory: 256Mi }
+    steps:
+      - { name: stream-logs, run: "i=0; while [ $i -lt 600000 ]; do echo \"line-$i 0123456789abcdefghijklmnopqrstuvwxyz\"; i=$((i+1)); done" }

@@ -14,6 +14,10 @@ from ruamel.yaml.comments import CommentedMap, CommentedSeq
 yaml = YAML()
 yaml.preserve_quotes = True
 
+SEMVER_RE = re.compile(
+    r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
+
 
 class PipelineError(Exception):
     """Raised for any pipeline validation error, message includes line info."""
@@ -106,7 +110,7 @@ def parse_pipeline(yaml_text: str) -> Dict[str, Any]:
         raise PipelineError("'name' must be a non-empty string")
 
     version = str(doc["version"])
-    if not re.match(r"^\d+\.\d+\.\d+", version):
+    if not SEMVER_RE.match(version):
         raise PipelineError(f"Pipeline 'version' must be semver, got: {version!r}")
 
     # --- dependencies ---
@@ -212,7 +216,7 @@ def parse_pipeline(yaml_text: str) -> Dict[str, Any]:
                 raise PipelineError(f"artifacts[{i}] must be a mapping")
             _check_fields(art, ARTIFACT_REQUIRED, ARTIFACT_REQUIRED | ARTIFACT_OPTIONAL, f"artifacts[{i}]")
             art_version = str(art["version"])
-            if not re.match(r"^\d+\.\d+\.\d+", art_version):
+            if not SEMVER_RE.match(art_version):
                 raise PipelineError(
                     f"artifacts[{i}].version must be semver, got: {art_version!r}"
                 )

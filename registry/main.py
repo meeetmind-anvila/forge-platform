@@ -7,6 +7,7 @@ import hashlib
 import io
 import logging
 import os
+import re
 import shutil
 import tempfile
 from contextlib import asynccontextmanager
@@ -46,6 +47,9 @@ BLOB_DIR = BASE_DIR / "blobs"
 DB_PATH = BASE_DIR / "registry.db"
 AUTH_DB_PATH = BASE_DIR / "auth.db"
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(500 * 1024 * 1024)))  # 500MB
+SEMVER_RE = re.compile(
+    r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -98,10 +102,9 @@ async def upload_artifact(
     - If checksum mismatch → 400
     """
     import json
-    import re
 
     # Validate semver
-    if not re.match(r"^\d+\.\d+\.\d+", version):
+    if not SEMVER_RE.match(version):
         raise HTTPException(status_code=400, detail=f"Non-semver version: {version}")
 
     # Validate checksum format

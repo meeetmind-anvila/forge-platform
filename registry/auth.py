@@ -6,6 +6,7 @@ import hashlib
 import os
 import secrets
 import sqlite3
+import sys
 from typing import Optional
 
 import bcrypt
@@ -93,3 +94,46 @@ def revoke_token(db_path: str, name: str) -> bool:
         return cur.rowcount > 0
     finally:
         conn.close()
+
+
+def _main() -> int:
+    if len(sys.argv) < 3 or sys.argv[1] not in {"create", "list", "revoke"}:
+        print("Usage:")
+        print("  python auth.py create <name> [db_path]")
+        print("  python auth.py list [db_path]")
+        print("  python auth.py revoke <name> [db_path]")
+        return 2
+
+    command = sys.argv[1]
+    db_path = os.getenv("FORGE_AUTH_DB", "/data/registry/auth.db")
+
+    if command == "list":
+        if len(sys.argv) >= 3:
+            db_path = sys.argv[2]
+        init_auth_db(db_path)
+        for row in list_tokens(db_path):
+            print(f"{row['name']}\t{row['created_at']}")
+        return 0
+
+    name = sys.argv[2]
+    if len(sys.argv) >= 4:
+        db_path = sys.argv[3]
+
+    init_auth_db(db_path)
+    if command == "create":
+        token = create_token(db_path, name)
+        print(token)
+        return 0
+
+    if command == "revoke":
+        if not revoke_token(db_path, name):
+            print(f"Token not found: {name}", file=sys.stderr)
+            return 1
+        print(f"Revoked {name}")
+        return 0
+
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
