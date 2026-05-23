@@ -66,9 +66,7 @@ def _check_fields(node: CommentedMap, required: set, allowed: set, ctx: str) -> 
             raise PipelineError(f"Missing required field '{req}' in {ctx}")
 
 
-
-
- def _parse_memory(mem_str: str) -> int:
+def _parse_memory(mem_str: str) -> int:
     """Parse memory string like '512Mi', '1Gi', '256M' to bytes."""
     m = re.match(r"^(\d+(?:\.\d+)?)(Ki|Mi|Gi|K|M|G|)$", str(mem_str).strip())
     if not m:
