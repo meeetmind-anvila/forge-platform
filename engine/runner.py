@@ -110,8 +110,6 @@ class JobRunner:
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
             "--pids-limit", "200",
-            "--read-only",
-            "--tmpfs", "/tmp",
             # Workspace volume (rw)
             "-v", f"{workspace}:/workspace:rw",
             # Working dir
