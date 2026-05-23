@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -89,7 +90,9 @@ class JobRunner:
         # Build Docker command
         container_name = f"forge-{run_id[:8]}-{job_name}-{int(time.time())}"
         steps_script = self._build_steps_script(job_def["steps"])
-        script_path = workspace / "__forge_run.sh"
+        safe_job_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", job_name)
+        script_name = f"__forge_run_{safe_job_name}.sh"
+        script_path = workspace / script_name
         script_path.write_text(steps_script)
         script_path.chmod(0o755)
 
@@ -119,7 +122,7 @@ class JobRunner:
             "-e", "HOME=/workspace",
             # Image and command
             runtime,
-            "sh", "/workspace/__forge_run.sh",
+            "sh", f"/workspace/{script_name}",
         ]
 
         self._log_line(log_path, job_name, f"[forge] Starting job '{job_name}' on {runtime}")
