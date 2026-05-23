@@ -83,3 +83,149 @@ def _parse_memory(mem_str: str) -> int:
         "": 1,
     }
     return int(val * multipliers[unit])
+
+
+def parse_pipeline(yaml_text: str) -> Dict[str, Any]:
+    """
+    Parse and validate a pipeline YAML string.
+    Returns a dict with keys: name, version, dependencies, jobs, artifacts.
+    Raises PipelineError with line info on any validation failure.
+    """
+    try:
+        doc = yaml.load(yaml_text)
+    except Exception as exc:
+        raise PipelineError(f"YAML parse error: {exc}")
+
+    if doc is None or not isinstance(doc, dict):
+        raise PipelineError("Pipeline document is empty or not a mapping")
+
+    _check_fields(doc, PIPELINE_REQUIRED, PIPELINE_ALL, "pipeline root")
+
+    name = doc["name"]
+    if not isinstance(name, str) or not name.strip():
+        raise PipelineError("'name' must be a non-empty string")
+
+    version = str(doc["version"])
+    if not re.match(r"^\d+\.\d+\.\d+", version):
+        raise PipelineError(f"Pipeline 'version' must be semver, got: {version!r}")
+
+    # --- dependencies ---
+    dependencies = []
+    if "dependencies" in doc:
+        raw_deps = doc["dependencies"]
+        if not isinstance(raw_deps, (list, CommentedSeq)):
+            raise PipelineError(f"'dependencies' must be a list{_line(doc)}")
+        for i, dep in enumerate(raw_deps):
+            if not isinstance(dep, dict):
+                raise PipelineError(f"dependencies[{i}] must be a mapping")
+            _check_fields(dep, DEP_REQUIRED, DEP_REQUIRED | DEP_OPTIONAL, f"dependencies[{i}]")
+            dependencies.append({
+                "name": str(dep["name"]),
+                "version": str(dep["version"]),
+            })
+
+    # --- jobs ---
+    raw_jobs = doc["jobs"]
+    if not isinstance(raw_jobs, dict):
+        raise PipelineError(f"'jobs' must be a mapping{_line(doc)}")
+    if not raw_jobs:
+        raise PipelineError("'jobs' must have at least one job")
+
+    jobs = {}
+    for job_name, job_def in raw_jobs.items():
+        if not isinstance(job_def, dict):
+            raise PipelineError(f"jobs.{job_name} must be a mapping")
+        _check_fields(job_def, JOB_REQUIRED, JOB_ALL, f"jobs.{job_name}")
+
+        # steps
+        raw_steps = job_def["steps"]
+        if not isinstance(raw_steps, (list, CommentedSeq)) or not raw_steps:
+            raise PipelineError(f"jobs.{job_name}.steps must be a non-empty list")
+
+        steps = []
+        for si, step in enumerate(raw_steps):
+            if not isinstance(step, dict):
+                raise PipelineError(f"jobs.{job_name}.steps[{si}] must be a mapping")
+            _check_fields(step, STEP_REQUIRED, STEP_ALL, f"jobs.{job_name}.steps[{si}]")
+            steps.append({
+                "name": str(step["name"]),
+                "run": str(step["run"]),
+            })
+
+        # resources
+        resources = {"cpu": 1.0, "memory_bytes": 512 * 1024 * 1024}
+        if "resources" in job_def:
+            res = job_def["resources"]
+            if not isinstance(res, dict):
+                raise PipelineError(f"jobs.{job_name}.resources must be a mapping")
+            for k in res:
+                if k not in RESOURCES_OPTIONAL:
+                    raise PipelineError(f"Unknown resource field '{k}' in jobs.{job_name}.resources")
+            if "cpu" in res:
+                try:
+                    resources["cpu"] = float(res["cpu"])
+                except (ValueError, TypeError):
+                    raise PipelineError(f"jobs.{job_name}.resources.cpu must be numeric")
+            if "memory" in res:
+                resources["memory_bytes"] = _parse_memory(res["memory"])
+
+        # runtime
+        runtime = str(job_def.get("runtime", "alpine:3.18"))
+
+        # needs
+        needs = []
+        if "needs" in job_def:
+            n = job_def["needs"]
+            if isinstance(n, str):
+                needs = [n]
+            elif isinstance(n, (list, CommentedSeq)):
+                needs = [str(x) for x in n]
+            else:
+                raise PipelineError(f"jobs.{job_name}.needs must be a string or list")
+            for needed in needs:
+                if needed == job_name:
+                    raise PipelineError(f"jobs.{job_name} cannot depend on itself")
+
+        jobs[job_name] = {
+            "runtime": runtime,
+            "resources": resources,
+            "steps": steps,
+            "needs": needs,
+        }
+
+    # Validate needs references
+    for job_name, job in jobs.items():
+        for needed in job["needs"]:
+            if needed not in jobs:
+                raise PipelineError(
+                    f"jobs.{job_name} needs '{needed}' which is not defined"
+                )
+
+    # --- artifacts ---
+    artifacts = []
+    if "artifacts" in doc:
+        raw_arts = doc["artifacts"]
+        if not isinstance(raw_arts, (list, CommentedSeq)):
+            raise PipelineError("'artifacts' must be a list")
+        for i, art in enumerate(raw_arts):
+            if not isinstance(art, dict):
+                raise PipelineError(f"artifacts[{i}] must be a mapping")
+            _check_fields(art, ARTIFACT_REQUIRED, ARTIFACT_REQUIRED | ARTIFACT_OPTIONAL, f"artifacts[{i}]")
+            art_version = str(art["version"])
+            if not re.match(r"^\d+\.\d+\.\d+", art_version):
+                raise PipelineError(
+                    f"artifacts[{i}].version must be semver, got: {art_version!r}"
+                )
+            artifacts.append({
+                "name": str(art["name"]),
+                "version": art_version,
+                "path": str(art["path"]),
+            })
+
+    return {
+        "name": name,
+        "version": version,
+        "dependencies": dependencies,
+        "jobs": jobs,
+        "artifacts": artifacts,
+    }
