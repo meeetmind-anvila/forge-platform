@@ -1,0 +1,37 @@
+# Forge Platform Configuration
+# Edit this file then restart services: docker compose restart
+
+registry:
+  # Directory for blobs and SQLite DB
+  data_dir: /data/registry
+  # Maximum artifact size
+  max_upload_bytes: 524288000  # 500MB
+
+engine:
+  data_dir: /data/engine
+  # Number of concurrent job executions (across all pipelines)
+  max_concurrency: 4
+  # Per-job wall-clock timeout in seconds (default 30 min)
+  job_timeout_seconds: 1800
+
+isolation:
+  # Docker network name for build containers
+  build_network: forge_build_net
+  # PID limit per container (prevents fork bombs)
+  pids_limit: 200
+  # Default runtime if not specified in pipeline
+  default_runtime: alpine:3.18
+
+auth:
+  # Auth DB path (shared between engine and registry)
+  db_path: /data/registry/auth.db
+
+slack:
+  # Set FORGE_SLACK_WEBHOOK env var or put URL here
+  webhook_url: ""
+  # Slack user IDs to tag on critical alerts (integrity failures)
+  # Format: "<@U12345> <@U67890>"
+  oncall_tags: ""
+
+logging:
+  level: INFO
