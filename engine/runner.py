@@ -13,9 +13,12 @@ Isolation enforced:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -104,8 +107,6 @@ class JobRunner:
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
             "--pids-limit", "200",
-            "--read-only",
-            "--tmpfs", "/tmp",
             # Workspace volume (rw)
             "-v", f"{workspace}:/workspace:rw",
             # Working dir
@@ -211,11 +212,125 @@ class JobRunner:
             self._log_line(log_path, job_name, "[forge] Container OOM killed (exit 137)")
         return rc == 0
 
+    async def pull_deps(
+        self,
+        lockfile: List[Dict[str, Any]],
+        workspace: Path,
+        log_path: Path,
+    ) -> Optional[Dict]:
+        """
+        Pull all locked dependencies into workspace/deps/<name>/.
+        Verifies SHA-256 of each downloaded blob.
+        Returns integrity failure dict if any mismatch, else None.
+        """
+        import aiohttp
+        deps_dir = workspace / "deps"
+        deps_dir.mkdir(exist_ok=True)
+
+        async with aiohttp.ClientSession() as session:
+            for entry in lockfile:
+                name = entry["name"]
+                version = entry["version"]
+                expected_sha = entry["sha256"]
+                url = f"{self.registry_url}/artifacts/{name}/{version}"
+
+                self._log_line(log_path, "forge", f"[forge] Pulling dep {name}@{version} ...")
+
+                dest_dir = deps_dir / name
+                dest_dir.mkdir(exist_ok=True)
+                dest_file = dest_dir / f"{name}-{version}.tar.gz"
+
+                actual_sha = hashlib.sha256()
+                try:
+                    async with session.get(url) as resp:
+                        if resp.status != 200:
+                            raise Exception(f"Registry returned {resp.status} for {name}@{version}")
+                        with open(str(dest_file), "wb") as fout:
+                            async for chunk in resp.content.iter_chunked(65536):
+                                actual_sha.update(chunk)
+                                fout.write(chunk)
+                except Exception as exc:
+                    self._log_line(log_path, "forge", f"[forge] ERROR pulling {name}@{version}: {exc}")
+                    return {"success": False}
+
+                hex_actual = actual_sha.hexdigest()
+                if hex_actual != expected_sha:
+                    msg = (
+                        f"[forge] INTEGRITY FAILURE for {name}@{version}: "
+                        f"expected={expected_sha} actual={hex_actual}"
+                    )
+                    self._log_line(log_path, "forge", msg)
+                    return {
+                        "success": False,
+                        "integrity_failure": True,
+                        "artifact": f"{name}@{version}",
+                        "expected_sha": expected_sha,
+                        "actual_sha": hex_actual,
+                    }
+
+                self._log_line(log_path, "forge", f"[forge] ✓ {name}@{version} sha256={hex_actual[:16]}...")
+
+        return None
+
+    async def publish_artifact(
+        self,
+        run_id: str,
+        artifact: Dict[str, Any],
+        pipeline: Dict[str, Any],
+        workspace: str,
+    ) -> None:
+        """
+        Auto-publish an artifact declared in the pipeline.
+        The artifact path is relative to the shared workspace.
+        """
+        import aiohttp
+
+        # Find the workspace for the last succeeded job
+        # Artifacts are left in the run's workspace dir
+        art_path_str = artifact["path"].lstrip("./")
+        # Search job workspaces for the file
+        # The run_dir has workspace subdirs
+        found_path = None
+        for candidate in Path(workspace).rglob(art_path_str):
+            if candidate.is_file():
+                found_path = candidate
+                break
+
+        if found_path is None:
+            raise FileNotFoundError(
+                f"Artifact file not found: {artifact['path']} under {workspace}"
+            )
+
+        # Compute sha256
+        sha = hashlib.sha256()
+        with open(str(found_path), "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                sha.update(chunk)
+        hex_sha = sha.hexdigest()
+
+        # Upload to registry
+        deps_payload = json.dumps(pipeline.get("dependencies", []))
+        url = f"{self.registry_url}/artifacts/{artifact['name']}/{artifact['version']}"
+
+        headers = {"Authorization": f"Bearer {self.forge_token}"}
+
+        async with aiohttp.ClientSession(headers=headers) as session:
+            with open(str(found_path), "rb") as f:
+                data = aiohttp.FormData()
+                data.add_field("file", f, filename=found_path.name)
+                data.add_field("checksum", f"sha256:{hex_sha}")
+                data.add_field("deps", deps_payload)
+                async with session.post(url, data=data) as resp:
+                    if resp.status not in (200, 201):
+                        body = await resp.text()
+                        raise Exception(f"Publish failed ({resp.status}): {body}")
+
+        logger.info("Auto-published %s@%s", artifact["name"], artifact["version"])
 
     def _log_line(self, log_path: Path, job: str, line: str) -> None:
         """Write a timestamped log line to the job log file."""
         import datetime
-        ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        ts = datetime.datetime.utcnow().isoformat() + "Z"
         entry = json.dumps({"ts": ts, "job": job, "line": line})
         with open(str(log_path), "a", buffering=1) as f:
             f.write(entry + "\n")
