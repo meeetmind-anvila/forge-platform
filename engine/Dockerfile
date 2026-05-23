@@ -1,12 +1,16 @@
+FROM docker:29-cli AS docker-cli
+
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps: docker CLI for spawning job containers
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    docker.io \
     && rm -rf /var/lib/apt/lists/*
+
+# Docker CLI for spawning job containers through the mounted Docker socket.
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 
 # Python deps
 COPY requirements.txt ./requirements.txt
