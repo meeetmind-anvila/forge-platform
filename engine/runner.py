@@ -107,6 +107,8 @@ class JobRunner:
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
             "--pids-limit", "200",
+            "--read-only",
+            "--tmpfs", "/tmp",
             # Workspace volume (rw)
             "-v", f"{workspace}:/workspace:rw",
             # Working dir
@@ -330,7 +332,7 @@ class JobRunner:
     def _log_line(self, log_path: Path, job: str, line: str) -> None:
         """Write a timestamped log line to the job log file."""
         import datetime
-        ts = datetime.datetime.utcnow().isoformat() + "Z"
+        ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
         entry = json.dumps({"ts": ts, "job": job, "line": line})
         with open(str(log_path), "a", buffering=1) as f:
             f.write(entry + "\n")
