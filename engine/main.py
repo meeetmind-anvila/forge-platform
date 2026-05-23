@@ -32,7 +32,7 @@ logger = logging.getLogger("engine")
 
 # Make registry modules importable
 import sys as _sys
-_sys.path.insert(0, "/app/registry")
+_sys.path.insert(0, "/registry")
 
 # ---------------------------------------------------------------------------
 # Config

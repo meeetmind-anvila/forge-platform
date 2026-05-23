@@ -44,7 +44,6 @@ DEP_OPTIONAL: set = set()
 ARTIFACT_REQUIRED = {"name", "version", "path"}
 ARTIFACT_OPTIONAL: set = set()
 
-
 def _line(node: Any) -> str:
     """Try to extract line number from ruamel node."""
     if hasattr(node, "lc"):
