@@ -1,3 +1,5 @@
+FROM docker:29-cli AS docker-cli
+
 FROM python:3.12-slim
 
 WORKDIR /app
