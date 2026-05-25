@@ -126,4 +126,3 @@ For duplicate publish, run `examples/build-lib-core.yaml` twice. The second publ
 
 Slack webhook config is read from `FORGE_SLACK_WEBHOOK`. Integrity alerts include `FORGE_SLACK_ONCALL` tags.
 
-Screenshot: TODO before submission.
